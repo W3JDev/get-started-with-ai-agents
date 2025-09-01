@@ -5,6 +5,7 @@ import logging
 import sys
 from typing import Optional
 
+
 def configure_logging(log_file_name: Optional[str] = None, logger_name: str = "azureaiapp") -> logging.Logger:
     """
     Configure and return a logger with both stream (stdout) and optional file handlers.
