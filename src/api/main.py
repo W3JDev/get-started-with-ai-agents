@@ -4,76 +4,73 @@
 import contextlib
 import os
 
-from azure.ai.projects.aio import AIProjectClient
-from azure.identity import DefaultAzureCredential
-
 import fastapi
-from fastapi.staticfiles import StaticFiles
+from dotenv import load_dotenv
 from fastapi import Request
 from fastapi.responses import JSONResponse
-from dotenv import load_dotenv
+from fastapi.staticfiles import StaticFiles
 
 from logging_config import configure_logging
+from services.azure_openai_service import AzureOpenAIService
+from services.blob_storage_service import BlobStorageService
+from services.cosmos_db_service import CosmosDBService
+from services.rag_service import RAGService
 
 enable_trace = False
 logger = None
 
 @contextlib.asynccontextmanager
 async def lifespan(app: fastapi.FastAPI):
-    agent = None
-
-    proj_endpoint = os.environ.get("AZURE_EXISTING_AIPROJECT_ENDPOINT")
-    agent_id = os.environ.get("AZURE_EXISTING_AGENT_ID")
+    """Application lifespan manager for initializing and cleaning up services."""
+    
+    # Initialize services
+    openai_service = None
+    cosmos_service = None
+    blob_service = None
+    rag_service = None
+    
     try:
-        ai_project = AIProjectClient(
-            credential=DefaultAzureCredential(exclude_shared_token_cache_credential=True),
-            endpoint=proj_endpoint,
-            api_version = "2025-05-15-preview" # Evaluations yet not supported on stable (api_version="2025-05-01")
-        )
-        logger.info("Created AIProjectClient")
-
+        # Initialize Azure OpenAI service
+        openai_service = AzureOpenAIService()
+        logger.info("Initialized Azure OpenAI service")
+        
+        # Initialize Cosmos DB service
+        cosmos_service = CosmosDBService()
+        await cosmos_service.initialize()
+        logger.info("Initialized Cosmos DB service")
+        
+        # Initialize Blob Storage service
+        blob_service = BlobStorageService()
+        await blob_service.initialize()
+        logger.info("Initialized Blob Storage service")
+        
+        # Initialize RAG service
+        rag_service = RAGService(openai_service, cosmos_service, blob_service)
+        logger.info("Initialized RAG service")
+        
+        # Configure Application Insights if enabled
         if enable_trace:
-            application_insights_connection_string = ""
             try:
-                application_insights_connection_string = await ai_project.telemetry.get_connection_string()
-            except Exception as e:
-                e_string = str(e)
-                logger.error("Failed to get Application Insights connection string, error: %s", e_string)
-            if not application_insights_connection_string:
-                logger.error("Application Insights was not enabled for this project.")
-                logger.error("Enable it via the 'Tracing' tab in your AI Foundry project page.")
-                exit()
-            else:
                 from azure.monitor.opentelemetry import configure_azure_monitor
-                configure_azure_monitor(connection_string=application_insights_connection_string)
-                app.state.application_insights_connection_string = application_insights_connection_string
-                logger.info("Configured Application Insights for tracing.")
-
-        if agent_id:
-            try: 
-                agent = await ai_project.agents.get_agent(agent_id)
-                logger.info("Agent already exists, skipping creation")
-                logger.info(f"Fetched agent, agent ID: {agent.id}")
-                logger.info(f"Fetched agent, model name: {agent.model}")
-            except Exception as e:
-                logger.error(f"Error fetching agent: {e}", exc_info=True)
-
-        if not agent:
-            # Fallback to searching by name
-            agent_name = os.environ["AZURE_AI_AGENT_NAME"]
-            agent_list = ai_project.agents.list_agents()
-            if agent_list:
-                async for agent_object in agent_list:
-                    if agent_object.name == agent_name:
-                        agent = agent_object
-                        logger.info(f"Found agent by name '{agent_name}', ID={agent_object.id}")
-                        break
-
-        if not agent:
-            raise RuntimeError("No agent found. Ensure qunicorn.py created one or set AZURE_EXISTING_AGENT_ID.")
-
-        app.state.ai_project = ai_project
-        app.state.agent = agent
+                # Use connection string from environment if available
+                connection_string = os.getenv("APPLICATION_INSIGHTS_CONNECTION_STRING")
+                if connection_string:
+                    configure_azure_monitor(connection_string=connection_string)
+                    app.state.application_insights_connection_string = connection_string
+                    logger.info("Configured Application Insights for tracing.")
+                else:
+                    logger.warning("Application Insights connection string not found")
+            except ImportError:
+                logger.error("Required libraries for tracing not installed.")
+                logger.error("Please make sure azure-monitor-opentelemetry is installed.")
+        
+        # Store services in app state
+        app.state.openai_service = openai_service
+        app.state.cosmos_service = cosmos_service
+        app.state.blob_service = blob_service
+        app.state.rag_service = rag_service
+        
+        logger.info("All services initialized successfully")
         
         yield
 
@@ -82,11 +79,21 @@ async def lifespan(app: fastapi.FastAPI):
         raise RuntimeError(f"Error during startup: {e}")
 
     finally:
+        # Clean up services
         try:
-            await ai_project.close()
-            logger.info("Closed AIProjectClient")
-        except Exception as e:
-            logger.error("Error closing AIProjectClient", exc_info=True)
+            if rag_service:
+                logger.info("RAG service cleanup completed")
+            if blob_service:
+                await blob_service.close()
+                logger.info("Closed Blob Storage service")
+            if cosmos_service:
+                await cosmos_service.close()
+                logger.info("Closed Cosmos DB service")
+            if openai_service:
+                await openai_service.close()
+                logger.info("Closed Azure OpenAI service")
+        except Exception:
+            logger.error("Error during cleanup", exc_info=True)
 
 
 def create_app():
@@ -106,7 +113,9 @@ def create_app():
     if enable_trace:
         logger.info("Tracing is enabled.")
         try:
-            from azure.monitor.opentelemetry import configure_azure_monitor
+            import importlib.util
+            if importlib.util.find_spec("azure.monitor.opentelemetry") is not None:
+                from azure.monitor.opentelemetry import configure_azure_monitor  # noqa: F401
         except ModuleNotFoundError:
             logger.error("Required libraries for tracing not installed.")
             logger.error("Please make sure azure-monitor-opentelemetry is installed.")

@@ -6,107 +6,25 @@ targetScope = 'subscription'
 param environmentName string
 
 @description('Location for all resources')
-// Based on the model, creating an agent is not supported in all regions. 
-// The combination of allowed and usageName below is for AZD to check AI model gpt-4o-mini quota only for the allowed regions for creating an agent.
-// If using different models, update the SKU,capacity depending on the model you use.
-// https://learn.microsoft.com/azure/ai-services/agents/concepts/model-region-support
-@allowed([
-  'eastus'
-  'eastus2'
-  'swedencentral'
-  'westus'
-  'westus3'
-])
-@metadata({
-  azd: {
-    type: 'location'
-    // quota-validation for ai models: gpt-4o-mini
-    usageName: [
-      'OpenAI.GlobalStandard.gpt-4o-mini,80'
-    ]
-  }
-})
 param location string
 
-@description('Use this parameter to use an existing AI project resource ID')
-param azureExistingAIProjectResourceId string = ''
-@description('The Azure resource group where new resources will be deployed')
-param resourceGroupName string = ''
-@description('The Azure AI Foundry Hub resource name. If ommited will be generated')
-param aiProjectName string = ''
-@description('The application insights resource name. If ommited will be generated')
-param applicationInsightsName string = ''
-@description('The AI Services resource name. If ommited will be generated')
-param aiServicesName string = ''
-@description('The Azure Search resource name. If ommited will be generated')
-param searchServiceName string = ''
-@description('The Azure Search connection name. If ommited will use a default value')
-param searchConnectionName string = ''
-@description('The search index name')
-param aiSearchIndexName string = ''
-@description('The Azure Storage Account resource name. If ommited will be generated')
-param storageAccountName string = ''
-@description('The log analytics workspace name. If ommited will be generated')
-param logAnalyticsWorkspaceName string = ''
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
 
-// Chat completion model
-@description('Format of the chat model to deploy')
-@allowed(['Microsoft', 'OpenAI'])
-param agentModelFormat string = 'OpenAI'
-@description('Name of agent to deploy')
-param agentName string = 'agent-template-assistant'
-@description('(Deprecated) ID of agent to deploy')
-param aiAgentID string = ''
-@description('ID of the existing agent')
-param azureExistingAgentId string = ''
-@description('Name of the chat model to deploy')
-param agentModelName string = 'gpt-4o-mini'
-@description('Name of the model deployment')
-param agentDeploymentName string = 'gpt-4o-mini'
+@description('The Azure resource group where new resources will be deployed')
+param resourceGroupName string = ''
 
-@description('Version of the chat model to deploy')
-// See version availability in this table:
-// https://learn.microsoft.com/azure/ai-services/openai/concepts/models#global-standard-model-availability
-param agentModelVersion string = '2024-07-18'
+@description('The Azure Container Registry resource name. If omitted will be generated')
+param containerRegistryName string = ''
 
-@description('Sku of the chat deployment')
-param agentDeploymentSku string = 'GlobalStandard'
+@description('The log analytics workspace name. If omitted will be generated')
+param logAnalyticsWorkspaceName string = ''
 
-@description('Capacity of the chat deployment')
-// You can increase this, but capacity is limited per model/region, so you will get errors if you go over
-// https://learn.microsoft.com/en-us/azure/ai-services/openai/quotas-limits
-param agentDeploymentCapacity int = 30
+@description('The application insights resource name. If omitted will be generated')
+param applicationInsightsName string = ''
 
-// Embedding model
-@description('Format of the embedding model to deploy')
-@allowed(['Microsoft', 'OpenAI'])
-param embedModelFormat string = 'OpenAI'
-
-@description('Name of the embedding model to deploy')
-param embedModelName string = 'text-embedding-3-small'
-@description('Name of the embedding model deployment')
-param embeddingDeploymentName string = 'text-embedding-3-small'
-@description('Embedding model dimensionality')
-param embeddingDeploymentDimensions string = '100'
-
-@description('Version of the embedding model to deploy')
-// See version availability in this table:
-// https://learn.microsoft.com/azure/ai-services/openai/concepts/models#embeddings-models
-param embedModelVersion string = '1'
-
-@description('Sku of the embeddings model deployment')
-param embedDeploymentSku string = 'Standard'
-
-@description('Capacity of the embedding deployment')
-// You can increase this, but capacity is limited per model/region, so you will get errors if you go over
-// https://learn.microsoft.com/azure/ai-services/openai/quotas-limits
-param embedDeploymentCapacity int = 30
-
+@description('Use Application Insights for monitoring')
 param useApplicationInsights bool = true
-@description('Do we want to use the Azure AI Search')
-param useSearchService bool = false
 
 @description('Do we want to use the Azure Monitor tracing')
 param enableAzureMonitorTracing bool = false
@@ -127,43 +45,6 @@ var resourceToken = templateValidationMode? toLower(uniqueString(subscription().
 
 var tags = { 'azd-env-name': environmentName }
 
-var tempAgentID = !empty(aiAgentID) ? aiAgentID : ''
-var agentID = !empty(azureExistingAgentId) ? azureExistingAgentId : tempAgentID
-
-var aiChatModel = [
-  {
-    name: agentDeploymentName
-    model: {
-      format: agentModelFormat
-      name: agentModelName
-      version: agentModelVersion
-    }
-    sku: {
-      name: agentDeploymentSku
-      capacity: agentDeploymentCapacity
-    }
-  }
-]
-var aiEmbeddingModel = [ 
-  {
-    name: embeddingDeploymentName
-    model: {
-      format: embedModelFormat
-      name: embedModelName
-      version: embedModelVersion
-    }
-    sku: {
-      name: embedDeploymentSku
-      capacity: embedDeploymentCapacity
-    }
-  }
-]
-
-var aiDeployments = concat(
-  aiChatModel,
-  useSearchService ? aiEmbeddingModel : [])
-
-
 // Organize resources in a resource group
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   name: !empty(resourceGroupName) ? resourceGroupName : '${abbrs.resourcesResourceGroups}${environmentName}'
@@ -177,39 +58,8 @@ var logAnalyticsWorkspaceResolvedName = !useApplicationInsights
       ? logAnalyticsWorkspaceName
       : '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
 
-var resolvedSearchServiceName = !useSearchService
-  ? ''
-  : !empty(searchServiceName) ? searchServiceName : '${abbrs.searchSearchServices}${resourceToken}'
-  
-
-module ai 'core/host/ai-environment.bicep' = if (empty(azureExistingAIProjectResourceId)) {
-  name: 'ai'
-  scope: rg
-  params: {
-    location: location
-    tags: tags
-    storageAccountName: !empty(storageAccountName)
-      ? storageAccountName
-      : '${abbrs.storageStorageAccounts}${resourceToken}'
-    aiServicesName: !empty(aiServicesName) ? aiServicesName : 'aoai-${resourceToken}'
-    aiProjectName: !empty(aiProjectName) ? aiProjectName : 'proj-${resourceToken}'
-    aiServiceModelDeployments: aiDeployments
-    logAnalyticsName: logAnalyticsWorkspaceResolvedName
-    applicationInsightsName: !useApplicationInsights
-      ? ''
-      : !empty(applicationInsightsName) ? applicationInsightsName : '${abbrs.insightsComponents}${resourceToken}'
-    searchServiceName: resolvedSearchServiceName
-    appInsightConnectionName: 'appinsights-connection'
-    aoaiConnectionName: 'aoai-connection'
-  }
-}
-
-var searchServiceEndpoint = !useSearchService
-  ? ''
-  : empty(azureExistingAIProjectResourceId) ? ai!.outputs.searchServiceEndpoint : ''
-
-// If bringing an existing AI project, set up the log analytics workspace here
-module logAnalytics 'core/monitor/loganalytics.bicep' = if (!empty(azureExistingAIProjectResourceId)) {
+// Log Analytics for monitoring
+module logAnalytics 'core/monitor/loganalytics.bicep' = if (useApplicationInsights) {
   name: 'logAnalytics'
   scope: rg
   params: {
@@ -218,36 +68,106 @@ module logAnalytics 'core/monitor/loganalytics.bicep' = if (!empty(azureExisting
     name: logAnalyticsWorkspaceResolvedName
   }
 }
-var existingProjEndpoint = !empty(azureExistingAIProjectResourceId) ? format('https://{0}.services.ai.azure.com/api/projects/{1}',split(azureExistingAIProjectResourceId, '/')[8], split(azureExistingAIProjectResourceId, '/')[10]) : ''
 
-var projectResourceId = !empty(azureExistingAIProjectResourceId)
-  ? azureExistingAIProjectResourceId
-  : ai!.outputs.projectResourceId
-
-var projectEndpoint = !empty(azureExistingAIProjectResourceId)
-  ? existingProjEndpoint
-  : ai!.outputs.aiProjectEndpoint
-
-var resolvedApplicationInsightsName = !useApplicationInsights || !empty(azureExistingAIProjectResourceId)
-  ? ''
-  : !empty(applicationInsightsName) ? applicationInsightsName : '${abbrs.insightsComponents}${resourceToken}'
-
-module monitoringMetricsContribuitorRoleAzureAIDeveloperRG 'core/security/appinsights-access.bicep' = if (!empty(resolvedApplicationInsightsName)) {
-  name: 'monitoringmetricscontributor-role-azureai-developer-rg'
+// Application Insights for monitoring
+module monitoring 'core/monitor/monitoring.bicep' = if (useApplicationInsights) {
+  name: 'monitoring'
   scope: rg
   params: {
-    principalType: 'ServicePrincipal'
-    appInsightsName: resolvedApplicationInsightsName
-    principalId: api.outputs.SERVICE_API_IDENTITY_PRINCIPAL_ID
+    location: location
+    tags: tags
+    logAnalyticsName: logAnalyticsWorkspaceResolvedName
+    applicationInsightsName: !empty(applicationInsightsName) ? applicationInsightsName : '${abbrs.insightsComponents}${resourceToken}'
+    enableDashboard: false
+  }
+  dependsOn: [
+    logAnalytics
+  ]
+}
+
+// Container registry for hosting images
+module cr 'core/host/container-registry.bicep' = {
+  name: 'container-registry'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    name: !empty(containerRegistryName) ? containerRegistryName : '${abbrs.containerRegistryRegistries}${resourceToken}'
   }
 }
 
-resource existingProjectRG 'Microsoft.Resources/resourceGroups@2021-04-01' existing = if (!empty(azureExistingAIProjectResourceId) && contains(azureExistingAIProjectResourceId, '/')) {
-  name: split(azureExistingAIProjectResourceId, '/')[4]
+// Container Apps host for the API and frontend
+module api 'core/host/container-apps.bicep' = {
+  name: 'container-apps'
+  scope: rg
+  params: {
+    name: 'app'
+    location: location
+    tags: tags
+    applicationInsightsName: useApplicationInsights ? monitoring.outputs.applicationInsightsName : ''
+    containerRegistryName: cr.outputs.name
+    logAnalyticsWorkspaceName: useApplicationInsights ? logAnalytics.outputs.name : ''
+    identityType: 'SystemAssigned'
+    containerName: 'ai-agent-app'
+    exists: false
+    environmentVariables: [
+      {
+        name: 'AZURE_SUBSCRIPTION_ID'
+        value: subscription().subscriptionId
+      }
+      {
+        name: 'AZURE_RESOURCE_GROUP'
+        value: rg.name
+      }
+      {
+        name: 'AZURE_LOCATION'
+        value: location
+      }
+      {
+        name: 'ENABLE_AZURE_MONITOR_TRACING'
+        value: string(enableAzureMonitorTracing)
+      }
+      {
+        name: 'AZURE_TRACING_GEN_AI_CONTENT_RECORDING_ENABLED'
+        value: string(azureTracingGenAIContentRecordingEnabled)
+      }
+      {
+        name: 'RUNNING_IN_PRODUCTION'
+        value: 'true'
+      }
+    ]
+  }
 }
 
-module userRoleAzureAIDeveloperBackendExistingProjectRG 'core/security/role.bicep' = if (!empty(azureExistingAIProjectResourceId)) {
-  name: 'backend-role-azureai-developer-existing-project-rg'
+// Application Insights access for Container Apps
+module appInsightsAccess 'core/security/appinsights-access.bicep' = if (useApplicationInsights) {
+  name: 'appinsights-access'
+  scope: rg
+  params: {
+    principalType: 'ServicePrincipal'
+    appInsightsName: monitoring.outputs.applicationInsightsName
+    principalId: api.outputs.SERVICE_API_IDENTITY_PRINCIPAL_ID
+  }
+  dependsOn: [
+    monitoring
+    api
+  ]
+}
+
+// Outputs
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = cr.outputs.loginServer
+output AZURE_CONTAINER_REGISTRY_NAME string = cr.outputs.name
+output AZURE_CONTAINER_REGISTRY_RESOURCE_GROUP string = rg.name
+
+output AZURE_RESOURCE_GROUP string = rg.name
+output AZURE_LOCATION string = location
+
+output SERVICE_API_IDENTITY_PRINCIPAL_ID string = api.outputs.SERVICE_API_IDENTITY_PRINCIPAL_ID
+output SERVICE_API_NAME string = api.outputs.SERVICE_API_NAME
+output SERVICE_API_URI string = api.outputs.SERVICE_API_URI
+
+output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = useApplicationInsights ? logAnalytics.outputs.name : ''
+output AZURE_APPLICATION_INSIGHTS_NAME string = useApplicationInsights ? monitoring.outputs.applicationInsightsName : ''
   scope: existingProjectRG
   params: {
     principalType: 'ServicePrincipal'
