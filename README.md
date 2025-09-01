@@ -1,6 +1,6 @@
-# Getting Started with Agents Using Azure AI Foundry
+# Getting Started with AI Agents Using Existing Azure Resources
 
-The agent leverages the Azure AI Agent service and utilizes file search for knowledge retrieval from uploaded files, enabling it to generate responses with citations. The solution also includes built-in monitoring capabilities with tracing to ensure easier troubleshooting and optimized performance.
+A web-based chat application with an AI agent that uses your existing Azure OpenAI, Cosmos DB, and Blob Storage resources.
 
 <div style="text-align:center;">
 
@@ -10,39 +10,43 @@ The agent leverages the Azure AI Agent service and utilizes file search for know
 
 ## Solution Overview
 
-This solution deploys a web-based chat application with an AI agent running in Azure Container App.
+This solution deploys a web-based chat application with an AI agent running in Azure Container Apps that uses your existing Azure resources.
 
-The agent leverages the Azure AI Agent service and utilizes Azure AI Search for knowledge retrieval from uploaded files, enabling it to generate responses with citations. The solution also includes built-in monitoring capabilities with tracing to ensure easier troubleshooting and optimized performance.
+The agent uses direct Azure OpenAI integration for chat completion, Azure Blob Storage for file uploads and knowledge base, and Azure Cosmos DB for conversation history and metadata storage. The solution also includes built-in monitoring capabilities with Azure Application Insights.
 
-This solution creates an Azure AI Foundry project and Azure AI services. More details about the resources can be found in the [resources](#resources) documentation. There are options to enable logging, tracing, and monitoring.
+This solution only provisions Azure Container Apps and Container Registry - you bring your own Azure OpenAI, Cosmos DB, and Blob Storage resources.
 
 Instructions are provided for deployment through GitHub Codespaces, VS Code Dev Containers, and your local development environment.
 
 ### Solution Architecture
 
-![Architecture diagram showing that user input is provided to the Azure Container App, which contains the app code. With user identity and resource access through managed identity, the input is used to form a response. The input and the Azure monitor are able to use the Azure resources deployed in the solution: Application Insights, Azure AI Foundry Project, Azure AI Services, Storage account, Azure Container App, and Log Analytics Workspace.](docs/images/architecture.png)
+The app code runs in Azure Container Apps to process user input and generate responses. It integrates directly with your existing Azure resources:
 
-The app code runs in Azure Container App to process the user input and generate a response to the user. It leverages Azure AI projects and Azure AI services, including the model and agent.
+- **Azure OpenAI** - For chat completions and embeddings
+- **Azure Cosmos DB** - For conversation history and file metadata
+- **Azure Blob Storage** - For file uploads and knowledge base
+- **Azure Container Apps** - For hosting the application
+- **Azure Application Insights** - For monitoring and tracing (optional)
 
 ### Key Features
 
 - **Knowledge Retrieval**<br/>
-The AI agent uses file search to retrieve knowledge from uploaded files.
+The AI agent uses RAG (Retrieval-Augmented Generation) with embeddings stored in Cosmos DB to retrieve knowledge from uploaded files.
 
-- **Customizable AI Model Deployment**<br/>
-The solution allows users to configure and deploy AI models, such as gpt-4o-mini, with options to adjust model capacity, and knowledge retrieval methods.
+- **Direct Azure OpenAI Integration**<br/>
+Uses the official Azure OpenAI Python SDK for chat completions and embeddings, supporting any Azure OpenAI deployment.
 
 - **Built-in Monitoring and Tracing**<br/>
-Integrated monitoring capabilities, including Azure Monitor and Application Insights, enable tracing and logging for easier troubleshooting and performance optimization.
+Optional integration with Azure Monitor and Application Insights for tracing and logging.
 
 - **Flexible Deployment Options**<br/>
-The solution supports deployment through GitHub Codespaces, VS Code Dev Containers, or local environments, providing flexibility for different development workflows.
+The solution supports deployment through GitHub Codespaces, VS Code Dev Containers, or local environments.
 
-- **Agent Evaluation**<br/>
-This solution demonstrates how you can evaluate your agent's performance and quality during local development and incorporate it into monitoring and CI/CD workflow.
+- **Simple Configuration**<br/>
+Uses environment variables to connect to your existing Azure resources - no complex setup required.
 
-- **AI Red Teaming Agent**<br/>
-Facilitates the creation of an AI Red Teaming Agent that can run batch automated scans for safety and security scans on your Agent solution to check your risk posture before deploying it into production.
+- **File Upload Support**<br/>
+Upload documents that are automatically processed and indexed for knowledge retrieval during conversations.
 
 <br/>
 
@@ -52,20 +56,59 @@ Here is a screenshot showing the chatting web application with requests and resp
 
 ## Getting Started
 
+### Prerequisites
+
+Before deploying this solution, you need to have the following Azure resources already provisioned:
+
+1. **Azure OpenAI Service** with a deployed model (e.g., GPT-4, GPT-4o-mini)
+2. **Azure Cosmos DB** account
+3. **Azure Blob Storage** account
+
+### Quick Start
+
 | [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Azure-Samples/get-started-with-ai-agents) | [![Open in Dev Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Dev%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/Azure-Samples/get-started-with-ai-agents) |
 |---|---|
 
-1. Click `Open in GitHub Codespaces` or `Dev Containers` button above
-2. Wait for the environment to load
-3. Run the following commands in the terminal:
+1. **Set up environment variables** - Copy `.env.template` to `.env` and fill in your Azure resource details:
+   ```bash
+   cp .env.template .env
+   # Edit .env with your Azure resource information
+   ```
+
+2. **Deploy the application**:
    ```bash
    azd up
    ```
-4. Follow the prompts to select your Azure subscription and region
-5. Wait for deployment to complete (5-20 minutes) - you'll get a web app URL when finished
+
+3. **Follow the prompts** to select your Azure subscription and region for Container Apps deployment
+
+4. **Wait for deployment** to complete (2-5 minutes) - you'll get a web app URL when finished
+
+### Environment Variables Setup
+
+The `.env.template` file contains all required environment variables. Here's what you need to configure:
+
+```bash
+# Azure OpenAI Configuration
+AZURE_OPENAI_ENDPOINT=https://your-openai-resource.openai.azure.com/
+AZURE_OPENAI_API_KEY=your-api-key
+AZURE_OPENAI_DEPLOYMENT_NAME=gpt-4
+AZURE_OPENAI_API_VERSION=2024-02-15-preview
+
+# Azure Blob Storage Configuration  
+AZURE_STORAGE_ACCOUNT_NAME=yourstorageaccount
+AZURE_STORAGE_ACCOUNT_KEY=your-storage-key
+AZURE_STORAGE_CONTAINER_NAME=knowledge-base
+
+# Azure Cosmos DB Configuration
+AZURE_COSMOSDB_ENDPOINT=https://your-cosmosdb.documents.azure.com:443/
+AZURE_COSMOSDB_KEY=your-cosmosdb-key
+AZURE_COSMOSDB_DATABASE_NAME=ai-agent-db
+AZURE_COSMOSDB_CONTAINER_NAME=conversations
+```
 
 For detailed deployment options and troubleshooting, see the [full deployment guide](./docs/deployment.md).
-**After deployment, try these [sample questions](./docs/sample_questions.md) to test your agent.**
+**After deployment, try uploading documents and asking questions to test your agent.**
 
 ## Local Development
 
@@ -147,18 +190,17 @@ For a more comprehensive list of best practices and security recommendations for
 
 ### Resources
 
-This template creates everything you need to get started with Azure AI Foundry:
+This template only provisions Azure Container Apps and uses your existing resources:
 
-| Resource | Description |
-|----------|-------------|
-| [Azure AI Project](https://learn.microsoft.com/azure/ai-studio/how-to/create-projects) | Provides a collaborative workspace for AI development with access to models, data, and compute resources |
-| [Azure OpenAI Service](https://learn.microsoft.com/azure/ai-services/openai/) | Powers the AI agents for conversational AI and intelligent search capabilities. Default models deployed are gpt-4o-mini, but any Azure AI models can be specified per the [documentation](docs/deploy_customization.md#customizing-model-deployments) |
-| [Azure Container Apps](https://learn.microsoft.com/azure/container-apps/) | Hosts and scales the web application with serverless containers |
-| [Azure Container Registry](https://learn.microsoft.com/azure/container-registry/) | Stores and manages container images for secure deployment |
-| [Storage Account](https://learn.microsoft.com/azure/storage/blobs/) | Provides blob storage for application data and file uploads |
-| [AI Search Service](https://learn.microsoft.com/azure/search/) | *Optional* - Enables hybrid search capabilities combining semantic and vector search |
-| [Application Insights](https://learn.microsoft.com/azure/azure-monitor/app/app-insights-overview) | *Optional* - Provides application performance monitoring, logging, and telemetry for debugging and optimization |
-| [Log Analytics Workspace](https://learn.microsoft.com/azure/azure-monitor/logs/log-analytics-workspace-overview) | *Optional* - Collects and analyzes telemetry data for monitoring and troubleshooting |
+| Resource | Description | Required/Optional |
+|----------|-------------|-------------------|
+| [Azure OpenAI Service](https://learn.microsoft.com/azure/ai-services/openai/) | **Required (Existing)** - Your existing Azure OpenAI service with deployed models for chat completions and embeddings |
+| [Azure Cosmos DB](https://learn.microsoft.com/azure/cosmos-db/) | **Required (Existing)** - Your existing Cosmos DB account for storing conversation history and file metadata |
+| [Azure Blob Storage](https://learn.microsoft.com/azure/storage/blobs/) | **Required (Existing)** - Your existing storage account for file uploads and knowledge base |
+| [Azure Container Apps](https://learn.microsoft.com/azure/container-apps/) | **Provisioned** - Hosts and scales the web application with serverless containers |
+| [Azure Container Registry](https://learn.microsoft.com/azure/container-registry/) | **Provisioned** - Stores and manages container images for deployment |
+| [Application Insights](https://learn.microsoft.com/azure/azure-monitor/app/app-insights-overview) | **Optional (Provisioned)** - Provides application performance monitoring and logging |
+| [Log Analytics Workspace](https://learn.microsoft.com/azure/azure-monitor/logs/log-analytics-workspace-overview) | **Optional (Provisioned)** - Collects and analyzes telemetry data for monitoring |
 
 ## Troubleshooting
 
